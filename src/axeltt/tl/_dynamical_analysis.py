@@ -289,7 +289,7 @@ def dynamical_iteration(adata: AnnData,
     adata.obsm['rho'] =rho 
     kernel_similarity = ConnectivityKernel(adata)
     kernel_similarity.compute_transition_matrix(density_normalize = False)
-    adata.uns['kernel_connectivities'] = kernel_similarity.kernel_similarity
+    adata.uns['kernel_connectivities'] = kernel_similarity.transition_matrix
 
     U = adata.layers['unspliced']
     S = adata.layers['spliced']
