@@ -80,7 +80,6 @@ def construct_landscape(sc_object,thresh_cal_cov = 0.3, scale_axis = 1.0, scale_
     land_max_thresh = scale_land*np.max(land_cell)
     land_value[land_value>land_max_thresh] = np.nan
 
-    
     sc_object.uns['land_out'] = {}
     sc_object.uns['land_out']['land_value'] = land_value
     sc_object.uns['land_out']['grid_x'] = xv

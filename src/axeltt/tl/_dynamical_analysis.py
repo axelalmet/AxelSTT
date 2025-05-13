@@ -82,8 +82,8 @@ def dynamical_analysis(sc_object: AnnData,
     
     sc_object_aggr.obs['attractor'] = sc_object.obs['attractor'].values
     sc_object_aggr.uns['gene_subset'] = gene_subset
-    sc_object.uns['r2_keep_train'] = r2_keep_train
-    sc_object.uns['r2_keep_test'] = r2_keep_test
+    # sc_object.uns['r2_keep_train'] = r2_keep_train
+    # sc_object.uns['r2_keep_test'] = r2_keep_test
 
 
 
@@ -285,7 +285,7 @@ def dynamical_iteration(adata: AnnData,
     construct_tenstor(adata,rho = rho)
     adata.obsm['tensor_v_aver'] = aver_velo(adata.obsm['tensor_v'],rho) 
     adata.obsm['rho'] =rho 
-    kernel_similarity = ConnectivityKernel(adata)
+    kernel_similarity = ConnectivityKernel(adata) # Shoudl we also consider RealTimeKernel?
     kernel_similarity.compute_transition_matrix(density_normalize = False)
     adata.uns['kernel_connectivities'] = kernel_similarity.transition_matrix
 
