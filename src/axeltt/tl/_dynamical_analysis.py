@@ -56,9 +56,7 @@ def dynamical_analysis(sc_object: AnnData,
     kernel_tensor = VelocityKernel(sc_object_aggr, gene_subset = gene_subset)
     kernel_tensor.compute_transition_matrix(n_jobs=n_jobs, show_progress_bar = False,similarity = 'dot_product')
 
-    kernel = (1-weight_connectivities)*kernel_tensor+weight_connectivities*sc_object.uns['kernel_connectivities']
-    if use_spatial:
-        kernel = (1-spa_weight)*kernel + spa_weight*sc_object.uns['kernel_spatial']
+    kernel = (1-weight_connectivities)*kernel_tensor.transition_matrix + weight_connectivities*sc_object.uns['kernel_connectivities']
     
     g_fwd = GPCCA(kernel)
     g_fwd.compute_schur(n_components=n_components)
