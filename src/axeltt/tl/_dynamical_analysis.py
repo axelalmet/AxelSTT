@@ -317,7 +317,7 @@ def dynamical_iteration(adata: AnnData,
         
         sc.tl.pca(sc_object_aggr,use_highly_variable = True)
         sc.pp.neighbors(sc_object_aggr,n_neighbors = n_neighbors)#update the neighbors using multistable genes
-        dynamical_analysis(adata, sc_object_aggr, n_states = n_states,n_states_seq=n_states_seq, weight_connectivities=weight_connectivities, n_components = n_components,thresh_ms_gene = thresh_ms_gene, use_spatial = use_spatial, spa_weight = spa_weight, spa_conn_key = spa_conn_key, n_jobs=n_jobs)
+        dynamical_analysis(adata, sc_object_aggr, n_states = n_states,n_states_seq=n_states_seq, weight_connectivities=weight_connectivities, n_components = n_components,thresh_ms_gene = thresh_ms_gene, n_jobs=n_jobs)
         
         rho = adata.obsm['rho']
         adata.obs['attractor'] =  np.argmax(rho,axis = 1)
