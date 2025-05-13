@@ -15,9 +15,6 @@ def dynamical_analysis(sc_object: AnnData,
                        weight_connectivities: float = 0.2,
                        n_components: int = 20, 
                        thresh_ms_gene: float = 0, 
-                       use_spatial: bool = False, 
-                       spa_weight: float = 0.5,
-                       spa_conn_key: str = 'spatial',
                        n_jobs: int = 1) -> None:
     """
     Perform STT dynamical analysis on a single-cell transcriptomics dataset.
@@ -224,9 +221,6 @@ def dynamical_iteration(adata: AnnData,
                         n_neighbors: int = 100,
                         thresh_ms_gene: int = 0, 
                         thresh_entropy: float = 0.1, 
-                        use_spatial: bool = False,
-                        spa_weight: float = 0.5,
-                        spa_conn_key: str = 'spatial',
                         monitor_mode: bool = False,
                         l2: float = 0.1,
                         n_jobs: int = 1) -> AnnData:
@@ -295,12 +289,8 @@ def dynamical_iteration(adata: AnnData,
     adata.obsm['rho'] =rho 
     kernel_similarity = ConnectivityKernel(adata)
     kernel_similarity.compute_transition_matrix(density_normalize = False)
-    adata.uns['kernel_connectivities'] = kernel_similarity
-    if use_spatial:
-        spa_kernel = ConnectivityKernel(adata,conn_key=spa_conn_key+'_connectivities')
-        spa_kernel.compute_transition_matrix()
-        adata.uns['kernel_spatial'] = spa_kernel
-    
+    adata.uns['kernel_connectivities'] = kernel_similarity.kernel_similarity
+
     U = adata.layers['unspliced']
     S = adata.layers['spliced']
 

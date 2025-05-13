@@ -7,9 +7,9 @@ def construct_landscape(sc_object,thresh_cal_cov = 0.3, scale_axis = 1.0, scale_
     Function to construct the landscape of the multi-stable attractors
     
     Parameters  
-    ----------  
+    ----------      
     sc_object: AnnData object
-        Single cell data object
+            Single cell data object
     thresh_cal_cov: float
         Threshold to calculate the covariance matrix
     scale_axis: float
