@@ -1,13 +1,16 @@
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-import networks as nw
-import plotly.graph_objects as go
+# import networks as nw
+# import plotly.graph_objects as go
 from collections import defaultdict
 import scvelo as scv
-import pyemma.msm as msm
+# import pyemma.msm as msm
 import scipy
 import scanpy as sc
+from anndata import AnnData
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
 
 def plot_top_genes(adata, top_genes = 6, ncols = 2, figsize = (8,8), color_map = 'tab10', color ='attractor', attractor = None, hspace = 0.5,wspace = 0.5):
     """
@@ -125,61 +128,61 @@ def plot_para_hist(adata, bins = 20, log = True,figsize = (8,8)):
         axs[i].set_title(title_name)
 
 
-def plot_sankey(vector1, vector2):
-    """
-    Plot a Sankey diagram. Useful to compare between annotations and attractor assignments of STT.
+# def plot_sankey(vector1, vector2):
+#     """
+#     Plot a Sankey diagram. Useful to compare between annotations and attractor assignments of STT.
     
-    Parameters
-    ----------
-    vector1: list
-        A list of labels for the source nodes.
-    vector2: list
-        A list of labels for the target nodes.
-    Returns 
-    ------- 
-    None
-    """
+#     Parameters
+#     ----------
+#     vector1: list
+#         A list of labels for the source nodes.
+#     vector2: list
+#         A list of labels for the target nodes.
+#     Returns 
+#     ------- 
+#     None
+#     """
 
-    # Ensure both vectors have the same length.
-    assert len(vector1) == len(vector2)
+#     # Ensure both vectors have the same length.
+#     assert len(vector1) == len(vector2)
 
-    label_dict = defaultdict(lambda: len(label_dict))
+#     label_dict = defaultdict(lambda: len(label_dict))
     
-    # Generate a palette of colors.
-    palette = sns.color_palette('husl', n_colors=len(set(vector1 + vector2))).as_hex()
-    color_list = []
+#     # Generate a palette of colors.
+#     palette = sns.color_palette('husl', n_colors=len(set(vector1 + vector2))).as_hex()
+#     color_list = []
 
-    for label in vector1 + vector2:
-        label_id = label_dict[label]
-        if len(color_list) <= label_id:
-            color_list.append(palette[label_id % len(palette)])
+#     for label in vector1 + vector2:
+#         label_id = label_dict[label]
+#         if len(color_list) <= label_id:
+#             color_list.append(palette[label_id % len(palette)])
 
-    source = [label_dict[label] for label in vector1]
-    target = [label_dict[label] for label in vector2]
-    value = [1] * len(vector1)  # Assume each pair has a value of 1.
+#     source = [label_dict[label] for label in vector1]
+#     target = [label_dict[label] for label in vector2]
+#     value = [1] * len(vector1)  # Assume each pair has a value of 1.
     
-    # Color the links according to their target node.
-    link_color = [color_list[target[i]] for i in range(len(target))]
+#     # Color the links according to their target node.
+#     link_color = [color_list[target[i]] for i in range(len(target))]
 
-    # Create the Sankey diagram.
-    fig = go.Figure(data=[go.Sankey(
-        node=dict(
-            pad=15,
-            thickness=20,
-            line=dict(color="black", width=0.5),
-            label=list(label_dict.keys()),
-            color=color_list
-        ),
-        link=dict(
-            source=source,
-            target=target,
-            value=value,
-            color=link_color  # Color the links.
-        )
-    )])
+#     # Create the Sankey diagram.
+#     fig = go.Figure(data=[go.Sankey(
+#         node=dict(
+#             pad=15,
+#             thickness=20,
+#             line=dict(color="black", width=0.5),
+#             label=list(label_dict.keys()),
+#             color=color_list
+#         ),
+#         link=dict(
+#             source=source,
+#             target=target,
+#             value=value,
+#             color=link_color  # Color the links.
+#         )
+#     )])
 
-    fig.update_layout(title_text="Sankey Diagram", font_size=20)
-    fig.show()        
+#     fig.update_layout(title_text="Sankey Diagram", font_size=20)
+#     fig.show()        
                 
 def compute_tensor_similarity(adata, adata_aggr, pathway1, pathway2, state = 'spliced', attractor = None):
     """
@@ -225,7 +228,18 @@ def compute_tensor_similarity(adata, adata_aggr, pathway1, pathway2, state = 'sp
     tpm2 = adata.uns[vkey+'_graph'].toarray()
     return np.corrcoef(tpm1.reshape(-1),tpm2.reshape(-1))[0,1]
 
-def plot_landscape(sc_object,show_colorbar = False, dim = 2, size_point = 3, alpha_land = 0.5, alpha_point = 0.5,  color_palette_name = 'Set1', contour_levels = 15, elev=10, azim = 4):
+def plot_landscape(sc_object: AnnData,
+                   show_colorbar: bool = False, 
+                   dim: int = 2, 
+                   size_point: float = 3, 
+                   alpha_land: float = 0.5, 
+                   alpha_point: float = 0.5,  
+                   color_palette: list = None,
+                   color_palette_name: str = 'Set1',
+                   contour_levels: int = 15, 
+                   elev: int = 10, 
+                   azim: int = 4,
+                   return_fig: bool = False) -> Figure|Axes:
     """
     Plot the landscape of the attractor landscape
     
@@ -265,12 +279,15 @@ def plot_landscape(sc_object,show_colorbar = False, dim = 2, size_point = 3, alp
     K = sc_object.obsm['rho'].shape[1]
     labels =sc_object.obs['attractor'].astype(int)
     
-    color_palette = sns.color_palette(color_palette_name, K)
+    if color_palette is None:
+        color_palette = sns.color_palette(color_palette_name, K)
+    
     cluster_colors = [color_palette[x] for x in labels]
     
     if dim == 2:
-        plt.contourf(xv, yv, land_value, levels=contour_levels, cmap="Greys_r",zorder=-100, alpha = alpha_land)
-        plt.scatter(*trans_coord.T, s=size_point, linewidth=0, c=cluster_colors, alpha=alpha_point)
+        fig, ax = plt.subplots()
+        ax.contourf(xv, yv, land_value, levels=contour_levels, cmap="Greys_r",zorder=-100, alpha = alpha_land)
+        ax.scatter(*trans_coord.T, s=size_point, linewidth=0, c=cluster_colors, alpha=alpha_point)
 
     else:
         ax = plt.axes(projection='3d')
@@ -282,91 +299,96 @@ def plot_landscape(sc_object,show_colorbar = False, dim = 2, size_point = 3, alp
         
     if show_colorbar:
         plt.colorbar()
-        
 
-def infer_lineage(sc_object,si=0,sf=1,method = 'MPFT',flux_fraction = 0.9, size_state = 0.1, size_point = 3, alpha_land = 0.5, alpha_point = 0.5, size_text=20, show_colorbar = False, color_palette_name = 'Set1', contour_levels = 15):
-    """
-    Infer the lineage among the multi-stable attractors based on most probable flux tree or path
-    
-    Parameters
-    ----------
-    sc_object : AnnData object
-        Annotated data matrix.
-    si : int or list
-        Initial state (attractor index number) of specified transition path, specified when method = 'MPPT'
-    sf : int or list
-        Final state (attractor index number) , specified when method = 'MPPT'
-    method : str
-        Method to infer the lineage, either 'MPFT'(maxium probability flow tree, global) or 'MPPT'(most probable path tree, local)
-    flux_fraction : float
-        Fraction of the total flux to be considered
-    size_state : float  
-        Size of the state
-    size_point : float
-        Size of the points
-    alpha_land : float
-        Transparency of the landscape
-    alpha_point : float 
-        Transparency of the points
-    size_text : float
-        Size of the text
-    show_colorbar : bool
-        Whether to show the colorbar
-    color_palette_name : str
-        Name of the color palette
-    contour_levels : int
-        Number of contour levels
-    
-    Returns 
-    -------
-    None
-    """
+    if return_fig:
+        return ax
 
-    K = sc_object.obsm['rho'].shape[1]
-    centers = sc_object.uns['land_out']['cluster_centers']
-
-    
-
-    P_hat = sc_object.uns['da_out']['P_hat']
-    M = msm.markov_model(P_hat)
-    mu_hat = M.pi
-    
-    if method == 'MPFT':
-        Flux_cg = np.diag(mu_hat.reshape(-1)).dot(P_hat)
-        max_flux_tree = scipy.sparse.csgraph.minimum_spanning_tree(-Flux_cg)
-        max_flux_tree = -max_flux_tree.toarray()
-        #for i in range(K):
-        #    for j in range(i+1,K):   
-        #        max_flux_tree[i,j]= max(max_flux_tree[i,j],max_flux_tree[j,i])
-        #        max_flux_tree[j,i] = max_flux_tree[i,j]
-        
-        nw.plot_network(max_flux_tree, pos=centers, state_scale=size_state, state_sizes=mu_hat, arrow_scale=2.0,arrow_labels= None, arrow_curvature = 0.2, ax=plt.gca(),max_width=1000, max_height=1000)
-        plot_landscape(sc_object, show_colorbar = show_colorbar, size_point = size_point, alpha_land = alpha_land, alpha_point = alpha_point,  color_palette_name = color_palette_name)
-        plt.axis('off')   
 
         
-    if method == 'MPPT':
+
+# def infer_lineage(sc_object,si=0,sf=1,method = 'MPFT',flux_fraction = 0.9, size_state = 0.1, size_point = 3, alpha_land = 0.5, alpha_point = 0.5, size_text=20, show_colorbar = False, color_palette_name = 'Set1', contour_levels = 15):
+#     """
+#     Infer the lineage among the multi-stable attractors based on most probable flux tree or path
+    
+#     Parameters
+#     ----------
+#     sc_object : AnnData object
+#         Annotated data matrix.
+#     si : int or list
+#         Initial state (attractor index number) of specified transition path, specified when method = 'MPPT'
+#     sf : int or list
+#         Final state (attractor index number) , specified when method = 'MPPT'
+#     method : str
+#         Method to infer the lineage, either 'MPFT'(maxium probability flow tree, global) or 'MPPT'(most probable path tree, local)
+#     flux_fraction : float
+#         Fraction of the total flux to be considered
+#     size_state : float  
+#         Size of the state
+#     size_point : float
+#         Size of the points
+#     alpha_land : float
+#         Transparency of the landscape
+#     alpha_point : float 
+#         Transparency of the points
+#     size_text : float
+#         Size of the text
+#     show_colorbar : bool
+#         Whether to show the colorbar
+#     color_palette_name : str
+#         Name of the color palette
+#     contour_levels : int
+#         Number of contour levels
+    
+#     Returns 
+#     -------
+#     None
+#     """
+
+#     K = sc_object.obsm['rho'].shape[1]
+#     centers = sc_object.uns['land_out']['cluster_centers']
+
+    
+
+#     P_hat = sc_object.uns['da_out']['P_hat']
+#     M = msm.markov_model(P_hat)
+#     mu_hat = M.pi
+    
+#     if method == 'MPFT':
+#         Flux_cg = np.diag(mu_hat.reshape(-1)).dot(P_hat)
+#         max_flux_tree = scipy.sparse.csgraph.minimum_spanning_tree(-Flux_cg)
+#         max_flux_tree = -max_flux_tree.toarray()
+#         #for i in range(K):
+#         #    for j in range(i+1,K):   
+#         #        max_flux_tree[i,j]= max(max_flux_tree[i,j],max_flux_tree[j,i])
+#         #        max_flux_tree[j,i] = max_flux_tree[i,j]
         
-        #state_reorder = np.array(range(K))
-        #state_reorder[0] = si
-        #state_reorder[-1] = sf
-        #state_reorder[sf+1:-1]=state_reorder[sf+1:-1]+1
-        #state_reorder[1:si]=state_reorder[1:si]-1
-        if isinstance(si,int):
-            si = list(map(int, str(si)))
+#         nw.plot_network(max_flux_tree, pos=centers, state_scale=size_state, state_sizes=mu_hat, arrow_scale=2.0,arrow_labels= None, arrow_curvature = 0.2, ax=plt.gca(),max_width=1000, max_height=1000)
+#         plot_landscape(sc_object, show_colorbar = show_colorbar, size_point = size_point, alpha_land = alpha_land, alpha_point = alpha_point,  color_palette_name = color_palette_name)
+#         plt.axis('off')   
+
         
-        if isinstance(sf,int):
-            sf = list(map(int, str(sf)))
+#     if method == 'MPPT':
+        
+#         #state_reorder = np.array(range(K))
+#         #state_reorder[0] = si
+#         #state_reorder[-1] = sf
+#         #state_reorder[sf+1:-1]=state_reorder[sf+1:-1]+1
+#         #state_reorder[1:si]=state_reorder[1:si]-1
+#         if isinstance(si,int):
+#             si = list(map(int, str(si)))
+        
+#         if isinstance(sf,int):
+#             sf = list(map(int, str(sf)))
         
         
-        tpt = msm.tpt(M, si, sf)
-        Fsub = tpt.major_flux(fraction=flux_fraction)
-        Fsubpercent = 100.0 * Fsub / tpt.total_flux
+#         tpt = msm.tpt(M, si, sf)
+#         Fsub = tpt.major_flux(fraction=flux_fraction)
+#         Fsubpercent = 100.0 * Fsub / tpt.total_flux
         
     
-        plot_landscape(sc_object, show_colorbar = show_colorbar, size_point = size_point, alpha_land = alpha_land, alpha_point = alpha_point,  color_palette_name = color_palette_name, contour_levels = contour_levels)
-        nw.plot_network(Fsubpercent, state_scale=size_state*mu_hat,pos=centers, arrow_label_format="%3.1f",arrow_label_size = size_text,ax=plt.gca(), max_width=1000, max_height=1000)
-        plt.axis('off')   
+#         plot_landscape(sc_object, show_colorbar = show_colorbar, size_point = size_point, alpha_land = alpha_land, alpha_point = alpha_point,  color_palette_name = color_palette_name, contour_levels = contour_levels)
+#         nw.plot_network(Fsubpercent, state_scale=size_state*mu_hat,pos=centers, arrow_label_format="%3.1f",arrow_label_size = size_text,ax=plt.gca(), max_width=1000, max_height=1000)
+#         plt.axis('off')   
 
 
 def plot_tensor_heatmap(adata, attractor = 'all', component = 'spliced', top_genes = 50):

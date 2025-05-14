@@ -86,4 +86,6 @@ def construct_landscape(sc_object,thresh_cal_cov = 0.3, scale_axis = 1.0, scale_
     sc_object.uns['land_out']['grid_y'] = yv
     sc_object.uns['land_out']['trans_coord'] = trans_coord
     sc_object.uns['land_out']['cluster_centers'] = centers
+    sc_object.uns['land_out']['AIC'] = gmm.aic(trans_coord)
+    sc_object.uns['land_out']['BIC'] = gmm.bic(trans_coord)
     sc_object.obs['land_cell'] = land_cell

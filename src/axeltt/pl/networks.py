@@ -18,7 +18,7 @@
 
 import numpy as _np
 import warnings
-from pyemma.util import types as _types
+# from pyemma.util import types as _types
 
 from math import sqrt as _sqrt
 import logging
