@@ -1,16 +1,69 @@
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-# import networks as nw
+import networks as nw
 # import plotly.graph_objects as go
 from collections import defaultdict
 import scvelo as scv
-# import pyemma.msm as msm
 import scipy
 import scanpy as sc
 from anndata import AnnData
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
+from deeptime.markov.msm import MaximumLikelihoodMSM
+
+from scipy.linalg import eig
+
+class SimpleMSM:
+    def __init__(self, transition_matrix):
+        self.transition_matrix = np.asarray(transition_matrix)
+        self.stationary_distribution = self._compute_stationary_distribution()
+
+    def _compute_stationary_distribution(self):
+        eigvals, eigvecs = eig(self.transition_matrix.T, left=True, right=False)
+        stat_dist = np.real(eigvecs[:, np.isclose(eigvals, 1.0)])
+        stat_dist = stat_dist[:, 0]
+        stat_dist /= stat_dist.sum()
+        return stat_dist
+    
+def _ensure_state_list(x):
+    if isinstance(x, int):
+        return [x]
+    elif isinstance(x, (list, tuple, np.ndarray)):
+        return list(map(int, x))
+    else:
+        raise ValueError("si and sf must be integers or lists of integers.")
+
+def compute_tpt_flux(P, pi, A, B, flux_fraction=0.9):
+    n = P.shape[0]
+    q_plus = np.zeros(n)
+    q_plus[B] = 1.0
+    q_plus[A] = 0.0
+    mask = np.ones(n, dtype=bool)
+    mask[A] = False
+    mask[B] = False
+
+    I = np.eye(n)
+    lhs = I - P
+    rhs = P[:, B].sum(axis=1)
+    q_plus[mask] = np.linalg.solve(lhs[np.ix_(mask, mask)], rhs[mask])
+
+    # Gross flux
+    flux = pi[:, None] * P * q_plus[:, None] * (1 - q_plus[None, :])
+    
+    # Extract major flux subset
+    flux_flat = flux.flatten()
+    sorted_idx = np.argsort(flux_flat)[::-1]
+    cum_flux = np.cumsum(flux_flat[sorted_idx])
+    cutoff = flux_fraction * flux.sum()
+    keep = sorted_idx[cum_flux <= cutoff]
+    flux_filtered = np.zeros_like(flux)
+    flat_flux = flux.flatten()
+    flat_flux[keep] = flux_flat[keep]
+    flux_filtered = flat_flux.reshape(P.shape)
+    
+    flux_percent = 100.0 * flux_filtered / flux.sum()
+    return flux_percent
 
 def plot_top_genes(adata, top_genes = 6, ncols = 2, figsize = (8,8), color_map = 'tab10', color ='attractor', attractor = None, hspace = 0.5,wspace = 0.5):
     """
@@ -68,9 +121,9 @@ def plot_top_genes(adata, top_genes = 6, ncols = 2, figsize = (8,8), color_map =
         ax = plt.subplot(nrows, ncols, gene_id + 1)
         
         if color == 'attractor':
-            scv.pl.scatter(adata, x = S[:,ind_g],y = U[:,ind_g],color = 'attractor',show=False,alpha = 0.5,size = 50,ax=ax)
+            sc.pl.scatter(adata, x = S[:,ind_g],y = U[:,ind_g],color = 'attractor',show=False,alpha = 0.5,size = 50,ax=ax)
         if color == 'membership':
-            scv.pl.scatter(adata, x = S[:,ind_g],y = U[:,ind_g],color = adata.obsm['rho'][:,attractor] ,show=False,size = 20,ax=ax)
+            sc.pl.scatter(adata, x = S[:,ind_g],y = U[:,ind_g],color = adata.obsm['rho'][:,attractor] ,show=False,size = 20,ax=ax)
         ax.axline((0, 0), slope=1/beta,color = 'k')
         ax.set_title(gene_name)
         for i in range(K):
@@ -99,7 +152,7 @@ def plot_genes_list(adata, genelist, ncols = 2, figsize = (8,8), color_map = 'ta
 
 
         ax = plt.subplot(nrows, ncols, gene_id + 1)
-        scv.pl.scatter(adata, x = S[:,ind_g],y = U[:,ind_g],color = 'attractor',show=False,alpha = 0.5,size = 20,ax=ax)
+        sc.pl.scatter(adata, x = S[:,ind_g],y = U[:,ind_g],color = 'attractor',show=False,alpha = 0.5,size = 20,ax=ax)
         ax.axline((0, 0), slope=1/beta,color = 'k')
         ax.set_title(gene_name)
         for i in range(K):
@@ -234,7 +287,7 @@ def plot_landscape(sc_object: AnnData,
                    size_point: float = 3, 
                    alpha_land: float = 0.5, 
                    alpha_point: float = 0.5,  
-                   color_palette: list = None,
+                   color_palette: list[str] = None,
                    color_palette_name: str = 'Set1',
                    contour_levels: int = 15, 
                    elev: int = 10, 
@@ -304,7 +357,56 @@ def plot_landscape(sc_object: AnnData,
         return ax
 
 
+def infer_lineage(sc_object, si=0, sf=1, method='MPFT', flux_fraction=0.9, size_state=0.1, size_point=3, alpha_land=0.5, alpha_point=0.5, size_text=20, show_colorbar=False, color_palette: list[str] = None, color_palette_name='Set1', contour_levels=15, return_fig: bool = False):
+    K = sc_object.obsm['rho'].shape[1]
+    centers = sc_object.uns['land_out']['cluster_centers']
+    P_hat = sc_object.uns['da_out']['P_hat']
+
+    # Create deeptime MSM
+    msm_model = SimpleMSM(P_hat)
+    mu_hat = msm_model.stationary_distribution
+
+    if method == 'MPFT':
+        Flux_cg = np.diag(mu_hat) @ P_hat
+        max_flux_tree = scipy.sparse.csgraph.minimum_spanning_tree(-Flux_cg).toarray()
+        max_flux_tree = -max_flux_tree
+
+        plot_landscape(sc_object, 
+                       show_colorbar=show_colorbar,
+                       size_point=size_point,
+                       alpha_land=alpha_land, 
+                       alpha_point=alpha_point,
+                       color_palette=color_palette,
+                       color_palette_name=color_palette_name,
+                       contour_levels=contour_levels,
+                       return_fig=return_fig)
         
+        nw.plot_network(max_flux_tree, pos=centers, state_scale=size_state, state_sizes=mu_hat,
+                        arrow_scale=2.0, arrow_labels=None, arrow_curvature=0.2, ax=plt.gca(),
+                        max_width=1000, max_height=1000)
+
+        plt.axis('off')
+
+    elif method == 'MPPT':
+        si = _ensure_state_list(si)
+        sf = _ensure_state_list(sf)
+
+        flux_percent = compute_tpt_flux(P_hat, mu_hat, A=si, B=sf, flux_fraction=flux_fraction)
+
+        plot_landscape(sc_object, 
+                       show_colorbar=show_colorbar,
+                       size_point=size_point,
+                       alpha_land=alpha_land, 
+                       alpha_point=alpha_point,
+                       color_palette=color_palette,
+                       color_palette_name=color_palette_name,
+                       contour_levels=contour_levels,
+                       return_fig=return_fig)
+
+        nw.plot_network(flux_percent, pos=centers, state_scale=size_state * mu_hat,
+                        arrow_label_format="%3.1f", arrow_label_size=size_text, ax=plt.gca(),
+                        max_width=1000, max_height=1000)
+        plt.axis('off')
 
 # def infer_lineage(sc_object,si=0,sf=1,method = 'MPFT',flux_fraction = 0.9, size_state = 0.1, size_point = 3, alpha_land = 0.5, alpha_point = 0.5, size_text=20, show_colorbar = False, color_palette_name = 'Set1', contour_levels = 15):
 #     """

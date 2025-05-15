@@ -16,9 +16,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-import numpy as _np
+import numpy as np
 import warnings
-# from pyemma.util import types as _types
+import networkx as nx
 
 from math import sqrt as _sqrt
 import logging
@@ -113,13 +113,13 @@ class NetworkPlot(object):
                 connectionstyle="arc3,rad=%f" % -rad),
             zorder=0)
         # weighted center position
-        center = _np.array([0.55 * x1 + 0.45 * x2, 0.55 * y1 + 0.45 * y2])
-        v = _np.array([x2 - x1, y2 - y1])  # 1->2 vector
-        vabs = _np.abs(v)
-        vnorm = _np.array([v[1], -v[0]])  # orthogonal vector
-        vnorm = _np.divide(vnorm, _np.linalg.norm(vnorm))  # normalize
+        center = np.array([0.55 * x1 + 0.45 * x2, 0.55 * y1 + 0.45 * y2])
+        v = np.array([x2 - x1, y2 - y1])  # 1->2 vector
+        vabs = np.abs(v)
+        vnorm = np.array([v[1], -v[0]])  # orthogonal vector
+        vnorm = np.divide(vnorm, np.linalg.norm(vnorm))  # normalize
         # cross product to determine the direction into which vnorm points
-        z = _np.cross(v, vnorm)
+        z = np.cross(v, vnorm)
         if z < 0:
             vnorm *= -1
         offset = 0.5 * arrow_curvature * \
@@ -156,14 +156,14 @@ class NetworkPlot(object):
         # number of nodes
         n = len(self.pos)
         # get bounds and pad figure
-        xmin = _np.min(self.pos[:, 0])
-        xmax = _np.max(self.pos[:, 0])
+        xmin = np.min(self.pos[:, 0])
+        xmax = np.max(self.pos[:, 0])
         Dx = xmax - xmin
         xmin -= Dx * figpadding
         xmax += Dx * figpadding
         Dx *= 1 + figpadding
-        ymin = _np.min(self.pos[:, 1])
-        ymax = _np.max(self.pos[:, 1])
+        ymin = np.min(self.pos[:, 1])
+        ymax = np.max(self.pos[:, 1])
         Dy = ymax - ymin
         ymin -= Dy * figpadding
         ymax += Dy * figpadding
@@ -171,13 +171,13 @@ class NetworkPlot(object):
         # sizes of nodes
         if state_sizes is None:
             state_sizes = 0.5 * state_scale * \
-                min(Dx, Dy)**2 * _np.ones(n) / float(n)
+                min(Dx, Dy)**2 * np.ones(n) / float(n)
         else:
             state_sizes = 0.5 * state_scale * \
-                min(Dx, Dy)**2 * state_sizes / (_np.max(state_sizes) * float(n))
+                min(Dx, Dy)**2 * state_sizes / (np.max(state_sizes) * float(n))
         # automatic arrow rescaling
         arrow_scale *= 1.0 / \
-            (_np.max(self.A - _np.diag(_np.diag(self.A))) * _sqrt(n))
+            (np.max(self.A - np.diag(np.diag(self.A))) * _sqrt(n))
         # size figure
         if (Dx / max_width > Dy / max_height):
             figsize = (max_width, Dy * (max_width / Dx))
@@ -209,35 +209,41 @@ class NetworkPlot(object):
         if state_labels is None:
             pass
         elif isinstance(state_labels, str) and state_labels == 'auto':
-            state_labels = [str(i) for i in _np.arange(n)]
+            state_labels = [str(i) for i in np.arange(n)]
         else:
             if len(state_labels) != n:
                 raise ValueError("length of state_labels({}) has to match length of states({})."
                                  .format(len(state_labels), n))
         # set node colors
         if state_colors is None:
-            state_colors = '#ff5500'  # None is not acceptable
+            state_colors = '#ff5500'  # Fallback color
+
+        # If it's a single color string, replicate for all states
         if isinstance(state_colors, str):
             state_colors = [state_colors] * n
-        if isinstance(state_colors, list) and not len(state_colors) == n:
-            raise ValueError("Mistmatch between nstates and nr. state_colors (%u vs %u)" % (n, len(state_colors)))
+
+        # Handle numeric colormap or string colors
         try:
-            colorscales = _types.ensure_ndarray(state_colors, ndim=1, kind='numeric')
-            colorscales /= colorscales.max()
+            colorscales = np.asarray(state_colors, dtype=float).flatten()
+            if colorscales.size != n:
+                raise ValueError(f"Expected {n} numeric state_colors, got {colorscales.size}")
+            if colorscales.max() > 0:
+                colorscales /= colorscales.max()
             state_colors = [_plt.cm.binary(int(256.0 * colorscales[i])) for i in range(n)]
-        except AssertionError:
-            # assume we have a list of strings now.
-            logger.debug("could not cast 'state_colors' to numeric values.")
+        except (ValueError, TypeError):
+            # Assume list of color strings (e.g., HEX codes)
+            if len(state_colors) != n:
+                raise ValueError(f"Mismatch between number of states ({n}) and number of state_colors ({len(state_colors)})")
 
         # set arrow labels
-        if isinstance(arrow_labels, _np.ndarray):
+        if isinstance(arrow_labels, np.ndarray):
             L = arrow_labels
             if isinstance(arrow_labels[0,0], str):
                 arrow_label_format = '%s'
         elif isinstance(arrow_labels, str) and arrow_labels.lower() == 'weights':
             L = self.A[:, :]
         elif arrow_labels is None:
-            L = _np.empty(_np.shape(self.A), dtype=object)
+            L = np.empty(np.shape(self.A), dtype=object)
             L[:, :] = ''
             arrow_label_format = '%s'
         else:
@@ -279,53 +285,60 @@ class NetworkPlot(object):
         #self.ax.set_xlim(xmin, xmax)
         #self.ax.set_ylim(ymin, ymax)
         return fig
-
+    
     def _find_best_positions(self, G):
         """Finds best positions for the given graph (given as adjacency matrix)
-        nodes by minimizing a network potential.
+        nodes by minimizing a network potential using networkx.spring_layout.
         """
         initpos = None
         holddim = None
-        if self.xpos is not None:
-            y = _np.random.random(len(self.xpos))
-            initpos = _np.vstack((self.xpos, y)).T
-            holddim = 0
-        elif self.ypos is not None:
-            x = _np.zeros_like(self.xpos)
-            initpos = _np.vstack((x, self.ypos)).T
-            holddim = 1
-        # nothing to do
-        elif self.xpos is not None and self.ypos is not None:
-            return _np.array([self.xpos, self.ypos]), 0
-        from pyemma.plots._ext.fruchterman_reingold import _fruchterman_reingold
-        best_pos = _fruchterman_reingold(G, pos=initpos, dim=2, hold_dim=holddim)
 
-        # rescale fixed to user settings and balance the other coordinate
+        if self.xpos is not None and self.ypos is not None:
+            return np.vstack((self.xpos, self.ypos)).T, 0
+
+        elif self.xpos is not None:
+            y = np.random.random(len(self.xpos))
+            initpos = {i: [self.xpos[i], y[i]] for i in range(len(self.xpos))}
+            holddim = 0
+
+        elif self.ypos is not None:
+            x = np.zeros(len(self.ypos))
+            initpos = {i: [x[i], self.ypos[i]] for i in range(len(self.ypos))}
+            holddim = 1
+
+        # Convert adjacency to graph
+        G_nx = nx.from_numpy_array(G)
+
+        # Compute spring layout
+        layout_dict = nx.spring_layout(G_nx, pos=initpos, dim=2, seed=42)
+
+        # Convert to ndarray
+        best_pos = np.array([layout_dict[i] for i in range(len(G))])
+
+        # Emulate PyEMMA's post-scaling behavior
         if self.xpos is not None:
-            # rescale x to fixed value
-            best_pos[:, 0] *= (_np.max(self.xpos) - _np.min(self.xpos)
-                               ) / (_np.max(best_pos[:, 0]) - _np.min(best_pos[:, 0]))
-            best_pos[:, 0] += _np.min(self.xpos) - _np.min(best_pos[:, 0])
-            # rescale y to balance
-            if _np.max(best_pos[:, 1]) - _np.min(best_pos[:, 1]) > 0.01:
-                best_pos[:, 1] *= (_np.max(self.xpos) - _np.min(self.xpos)
-                                   ) / (_np.max(best_pos[:, 1]) - _np.min(best_pos[:, 1]))
+            # rescale x to match self.xpos
+            best_pos[:, 0] *= (np.max(self.xpos) - np.min(self.xpos)) / (np.ptp(best_pos[:, 0]) + 1e-12)
+            best_pos[:, 0] += np.min(self.xpos) - np.min(best_pos[:, 0])
+
+            # scale y to match x scale
+            if np.ptp(best_pos[:, 1]) > 0.01:
+                best_pos[:, 1] *= (np.max(self.xpos) - np.min(self.xpos)) / (np.ptp(best_pos[:, 1]) + 1e-12)
+
         if self.ypos is not None:
-            best_pos[:, 1] *= (_np.max(self.ypos) - _np.min(self.ypos)
-                               ) / (_np.max(best_pos[:, 1]) - _np.min(best_pos[:, 1]))
-            best_pos[:, 1] += _np.min(self.ypos) - _np.min(best_pos[:, 1])
-            # rescale x to balance
-            if _np.max(best_pos[:, 0]) - _np.min(best_pos[:, 0]) > 0.01:
-                best_pos[:, 0] *= (_np.max(self.ypos) - _np.min(self.ypos)
-                                   ) / (_np.max(best_pos[:, 0]) - _np.min(best_pos[:, 0]))
+            best_pos[:, 1] *= (np.max(self.ypos) - np.min(self.ypos)) / (np.ptp(best_pos[:, 1]) + 1e-12)
+            best_pos[:, 1] += np.min(self.ypos) - np.min(best_pos[:, 1])
+
+            if np.ptp(best_pos[:, 0]) > 0.01:
+                best_pos[:, 0] *= (np.max(self.ypos) - np.min(self.ypos)) / (np.ptp(best_pos[:, 0]) + 1e-12)
 
         return best_pos
-
+    
     def layout_automatic(self):
         n = len(self.A)
-        I, J = _np.where(self.A > 0.0)
+        I, J = np.where(self.A > 0.0)
         # note: against intuition this has to be of type float
-        A = _np.zeros((n, n))
+        A = np.zeros((n, n))
         A[I, J] = 1
 
         self.pos = self._find_best_positions(A)
@@ -416,7 +429,7 @@ def plot_markov_model(
 
     """
     from msmtools import analysis as msmana
-    if isinstance(P, _np.ndarray):
+    if isinstance(P, np.ndarray):
         P = P.copy()
     else:
         # MSM object? then get transition matrix first
@@ -424,8 +437,8 @@ def plot_markov_model(
     if state_sizes is None:
         state_sizes = msmana.stationary_distribution(P)
     if minflux > 0:
-        F = _np.dot(_np.diag(msmana.stationary_distribution(P)), P)
-        I, J = _np.where(F < minflux)
+        F = np.dot(np.diag(msmana.stationary_distribution(P)), P)
+        I, J = np.where(F < minflux)
         P[I, J] = 0.0
     plot = NetworkPlot(P, pos=pos, ax=ax)
     fig = plot.plot_network(
@@ -549,15 +562,15 @@ def plot_flux(
         state_sizes = flux.stationary_distribution
     plot = NetworkPlot(F, pos=pos, xpos=c, ax=ax)
     if minflux > 0:
-        I, J = _np.where(F < minflux)
+        I, J = np.where(F < minflux)
         F[I, J] = 0.0
 
     if isinstance(state_labels, str) and state_labels == 'auto':
         # the first and last element correspond to A and B in ReactiveFlux
-        state_labels = _np.array([str(i) for i in range(flux.nstates)])
-        state_labels[_np.array(flux.A)] = "A"
-        state_labels[_np.array(flux.B)] = "B"
-    elif isinstance(state_labels, (_np.ndarray, list, tuple)):
+        state_labels = np.array([str(i) for i in range(flux.nstates)])
+        state_labels[np.array(flux.A)] = "A"
+        state_labels[np.array(flux.B)] = "B"
+    elif isinstance(state_labels, (np.ndarray, list, tuple)):
         if len(state_labels) != flux.nstates:
             raise ValueError("length of state_labels({}) has to match length of states({})."
                              .format(len(state_labels), flux.nstates))
