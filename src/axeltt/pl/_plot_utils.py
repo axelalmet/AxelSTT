@@ -14,6 +14,7 @@ from deeptime.markov.msm import MaximumLikelihoodMSM
 from cellrank.kernels import ConnectivityKernel, VelocityKernel
 
 from scipy.linalg import eig
+from scipy.sparse.linalg import eigs
 
 class SimpleMSM:
     def __init__(self, transition_matrix):
@@ -530,28 +531,24 @@ def plot_tensor_heatmap(adata, attractor = 'all', component = 'spliced', top_gen
 
     
 def plot_eigenpeaks(sc_object: AnnData,
-                    sc_object_aggr: AnnData,
-                    weight_connectivities: float = 0.2,
-                    thresh_ms_gene: float = 0, 
-                    use_time: bool = False,
-                    time_weight: float = 0.5,
-                    time_kernel_key: str = 'realtime_kernel',
-                    n_jobs: int = 1,
+                    kernel_key: str = 'kernel',
+                    n_eigenvals: int = 10,
                     return_fig: bool = False) -> Figure|Axes:
     
-    gene_select = sc_object.var['r2_test'][sc_object.var['r2_test']>thresh_ms_gene].index.tolist()
-    gene_subset = [gene+'_u' for gene in gene_select]+gene_select
-
-    kernel_tensor = VelocityKernel(sc_object_aggr, gene_subset = gene_subset)
-    kernel_tensor.compute_transition_matrix(n_jobs=n_jobs, show_progress_bar = False,similarity = 'dot_product')
-
-    kernel_tensor = VelocityKernel(sc_object_aggr, gene_subset = gene_subset)
-    kernel_tensor.compute_transition_matrix(n_jobs=n_jobs, show_progress_bar = False,similarity = 'dot_product')
-
-    kernel = (1-weight_connectivities)*kernel_tensor.transition_matrix + weight_connectivities*sc_object.uns['kernel_connectivities']
-
-    if use_time:
-        kernel = (1-time_weight)*kernel + time_weight*sc_object.uns[time_kernel_key]
+    kernel = sc_object.obsp[kernel_key]
 
     # Calculate the eigenvalues of the kernel
+    eigvals, eigenvecs = eigs(kernel, k=n_eigenvals, which='LM')
+    eigvals_real = np.real(eigvals)
+    sorted_indices = np.argsort(-np.abs(eigvals_real))
+    eigvals_sorted = eigvals_real[sorted_indices]
+    eigvals_sq = eigvals_sorted**2
+
+    fig, ax = plt.subplots()
+    ax.plot(range(1, n_eigenvals), eigvals_sq[:-1] / eigvals_sq[1:], 'o')
+    ax.set_ylabel('Eigen-peaks index')
+
+    if return_fig:
+        return ax
+
 
