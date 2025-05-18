@@ -11,6 +11,7 @@ from anndata import AnnData
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
 from deeptime.markov.msm import MaximumLikelihoodMSM
+from cellrank.kernels import ConnectivityKernel, VelocityKernel
 
 from scipy.linalg import eig
 
@@ -121,9 +122,9 @@ def plot_top_genes(adata, top_genes = 6, ncols = 2, figsize = (8,8), color_map =
         ax = plt.subplot(nrows, ncols, gene_id + 1)
         
         if color == 'attractor':
-            sc.pl.scatter(adata, x = S[:,ind_g],y = U[:,ind_g],color = 'attractor',show=False,alpha = 0.5,size = 50,ax=ax)
+            scv.pl.scatter(adata, x = S[:,ind_g],y = U[:,ind_g],color = 'attractor',show=False,alpha = 0.5,size = 50,ax=ax)
         if color == 'membership':
-            sc.pl.scatter(adata, x = S[:,ind_g],y = U[:,ind_g],color = adata.obsm['rho'][:,attractor] ,show=False,size = 20,ax=ax)
+            scv.pl.scatter(adata, x = S[:,ind_g],y = U[:,ind_g],color = adata.obsm['rho'][:,attractor] ,show=False,size = 20,ax=ax)
         ax.axline((0, 0), slope=1/beta,color = 'k')
         ax.set_title(gene_name)
         for i in range(K):
@@ -526,3 +527,31 @@ def plot_tensor_heatmap(adata, attractor = 'all', component = 'spliced', top_gen
     sc.pl.heatmap(adata, gene_sort[0:top_genes], groupby='attractor', layer = 'velo_plot',standard_scale = 'var',cmap='RdBu_r')
     plt.suptitle('Tensor of ' + component + ', Attractor '+str(attractor))
     plt.show()
+
+    
+def plot_eigenpeaks(sc_object: AnnData,
+                    sc_object_aggr: AnnData,
+                    weight_connectivities: float = 0.2,
+                    thresh_ms_gene: float = 0, 
+                    use_time: bool = False,
+                    time_weight: float = 0.5,
+                    time_kernel_key: str = 'realtime_kernel',
+                    n_jobs: int = 1,
+                    return_fig: bool = False) -> Figure|Axes:
+    
+    gene_select = sc_object.var['r2_test'][sc_object.var['r2_test']>thresh_ms_gene].index.tolist()
+    gene_subset = [gene+'_u' for gene in gene_select]+gene_select
+
+    kernel_tensor = VelocityKernel(sc_object_aggr, gene_subset = gene_subset)
+    kernel_tensor.compute_transition_matrix(n_jobs=n_jobs, show_progress_bar = False,similarity = 'dot_product')
+
+    kernel_tensor = VelocityKernel(sc_object_aggr, gene_subset = gene_subset)
+    kernel_tensor.compute_transition_matrix(n_jobs=n_jobs, show_progress_bar = False,similarity = 'dot_product')
+
+    kernel = (1-weight_connectivities)*kernel_tensor.transition_matrix + weight_connectivities*sc_object.uns['kernel_connectivities']
+
+    if use_time:
+        kernel = (1-time_weight)*kernel + time_weight*sc_object.uns[time_kernel_key]
+
+    # Calculate the eigenvalues of the kernel
+

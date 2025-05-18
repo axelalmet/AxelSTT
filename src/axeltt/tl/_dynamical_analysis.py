@@ -60,10 +60,10 @@ def dynamical_analysis(sc_object: AnnData,
     kernel_tensor = VelocityKernel(sc_object_aggr, gene_subset = gene_subset)
     kernel_tensor.compute_transition_matrix(n_jobs=n_jobs, show_progress_bar = False,similarity = 'dot_product')
 
-    kernel = (1-weight_connectivities)*kernel_tensor.transition_matrix + weight_connectivities*sc_object.uns['kernel_connectivities']
+    kernel = (1-weight_connectivities)*kernel_tensor.transition_matrix + weight_connectivities*sc_object.obsp['kernel_connectivities']
 
     if use_time:
-        kernel = (1-time_weight)*kernel + time_weight*sc_object.uns[time_kernel_key]
+        kernel = (1-time_weight)*kernel + time_weight*sc_object.obsp[time_kernel_key]
     
     g_fwd = GPCCA(kernel)
     g_fwd.compute_schur(n_components=n_components)
@@ -83,7 +83,7 @@ def dynamical_analysis(sc_object: AnnData,
     sc_object.uns['da_out']['mu_hat'] = g_fwd.coarse_stationary_distribution.to_numpy()
     sc_object.uns['da_out']['membership'] = g_fwd.macrostates_memberships.X
     sc_object.uns['da_out']['gene_select'] = gene_select
-    sc_object.uns['kernel'] = kernel
+    sc_object.obsp['kernel'] = kernel
     sc_object.obsm['rho'] = g_fwd.macrostates_memberships.X
 
     
@@ -296,7 +296,7 @@ def dynamical_iteration(adata: AnnData,
     adata.obsm['rho'] =rho 
     kernel_similarity = ConnectivityKernel(adata) # Shoudl we also consider RealTimeKernel?
     kernel_similarity.compute_transition_matrix(density_normalize = False)
-    adata.uns['kernel_connectivities'] = kernel_similarity.transition_matrix
+    adata.obsp['kernel_connectivities'] = kernel_similarity.transition_matrix
 
     U = adata.layers['unspliced']
     S = adata.layers['spliced']
@@ -405,4 +405,3 @@ def dynamical_iteration(adata: AnnData,
         sc_object_aggr.obs['speed'] = adata.obs['speed'].values
         sc_object_aggr.obs['attractor'] = adata.obs['attractor'].values
         return sc_object_aggr
-    
