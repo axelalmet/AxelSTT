@@ -15,7 +15,11 @@ def dynamical_analysis(sc_object: AnnData,
                        weight_connectivities: float = 0.2,
                        n_components: int = 20, 
                        thresh_ms_gene: float = 0, 
-                       n_jobs: int = 1) -> None:
+                       use_time: bool = False,
+                       time_weight: float = 0.5,
+                       time_kernel_key: str = 'realtime_kernel',
+                       n_jobs: int = 1
+                       ) -> None:
     """
     Perform STT dynamical analysis on a single-cell transcriptomics dataset.
 
@@ -35,12 +39,12 @@ def dynamical_analysis(sc_object: AnnData,
         Number of components to compute in the Schur decomposition.
     thresh_ms_gene : float, optional
         Threshold for selecting genes based on their mean squared expression.
-    use_spatial : bool, optional
-        Whether to use spatial information in computing the transition matrix.
-    spa_weight : float, optional
-        Weight of spatial similarity in computing the transition matrix.
-    spa_conn_key : str, optional
-        Key for accessing the spatial connectivities in the AnnData object.
+    use_time : bool, optional
+        Whether to use experimental time information in computing the transition matrix.
+    time_weight : float, optional
+        Weight of temporal similarity in computing the transition matrix.
+    time_kernel_key : str, optional
+        Key for accessing the real time kernel (previously computed) in the AnnData object.
 
     Returns:
     --------
@@ -57,6 +61,9 @@ def dynamical_analysis(sc_object: AnnData,
     kernel_tensor.compute_transition_matrix(n_jobs=n_jobs, show_progress_bar = False,similarity = 'dot_product')
 
     kernel = (1-weight_connectivities)*kernel_tensor.transition_matrix + weight_connectivities*sc_object.uns['kernel_connectivities']
+
+    if use_time:
+        kernel = (1-time_weight)*kernel + time_weight*sc_object.uns[time_kernel_key]
     
     g_fwd = GPCCA(kernel)
     g_fwd.compute_schur(n_components=n_components)
@@ -86,8 +93,7 @@ def dynamical_analysis(sc_object: AnnData,
     # sc_object.uns['r2_keep_test'] = r2_keep_test
 
 
-
-def construct_tenstor(adata, rho, portion = 0.8,l=0):
+def construct_tensor(adata, rho, portion = 0.8,l=0):
     """ 
     Construct the tensor for the dynamical analysis.
     
@@ -220,6 +226,9 @@ def dynamical_iteration(adata: AnnData,
                         thresh_ms_gene: int = 0, 
                         thresh_entropy: float = 0.1, 
                         monitor_mode: bool = False,
+                        use_time: bool = False,
+                        time_weight: float = 0.5,
+                        time_kernel_key: str = 'real_time_kernel',
                         l2: float = 0.1,
                         n_jobs: int = 1) -> AnnData:
     """
@@ -247,12 +256,12 @@ def dynamical_iteration(adata: AnnData,
         Threshold for mean spliced gene expression.
     thresh_entropy: float, optional (default: 0.1)
         Threshold for entropy.
-    use_spatial: bool, optional (default: False)
-        Whether to use spatial information.
-    spa_weight: float, optional (default: 0.5)
-        Weight of spatial information.
-    spa_conn_key: str, optional (default: 'spatial')
-        Key for spatial connectivities.
+    use_time: bool, optional (default: False)
+        Whether to use experimental time information.
+    time_weight: float, optional (default: 0.5)
+        Weight of temporal information.
+    time_kernel_key: str, optional (default: 'real_time_kernel')
+        Key for real time kernel connectivities.
     stop_cr: str, optional (default: 'abs')
         Stopping criterion for iteration.
     monitor_mode: bool, optional (default: False)
@@ -282,7 +291,7 @@ def dynamical_iteration(adata: AnnData,
     
     adata.uns['da_out']={}
     rho = pd.get_dummies(adata.obs['attractor']).to_numpy()
-    construct_tenstor(adata,rho = rho)
+    construct_tensor(adata,rho = rho)
     adata.obsm['tensor_v_aver'] = aver_velo(adata.obsm['tensor_v'],rho) 
     adata.obsm['rho'] =rho 
     kernel_similarity = ConnectivityKernel(adata) # Shoudl we also consider RealTimeKernel?
@@ -315,13 +324,23 @@ def dynamical_iteration(adata: AnnData,
         
         sc.tl.pca(sc_object_aggr,use_highly_variable = True)
         sc.pp.neighbors(sc_object_aggr,n_neighbors = n_neighbors)#update the neighbors using multistable genes
-        dynamical_analysis(adata, sc_object_aggr, n_states = n_states,n_states_seq=n_states_seq, weight_connectivities=weight_connectivities, n_components = n_components,thresh_ms_gene = thresh_ms_gene, n_jobs=n_jobs)
+        dynamical_analysis(adata, 
+                           sc_object_aggr,
+                           n_states = n_states,
+                           n_states_seq=n_states_seq, 
+                           weight_connectivities=weight_connectivities,
+                           n_components = n_components,
+                           thresh_ms_gene = thresh_ms_gene, 
+                           use_time = use_time,
+                           time_weight = time_weight,
+                           time_kernel_key = time_kernel_key,
+                           n_jobs=n_jobs)
         
         rho = adata.obsm['rho']
         adata.obs['attractor'] =  np.argmax(rho,axis = 1)
         adata.obs['attractor'] = adata.obs['attractor'].astype('category')
         
-        construct_tenstor(adata,rho = rho,l=l2)
+        construct_tensor(adata,rho = rho,l=l2)
         adata.obsm['tensor_v_aver'] = aver_velo(adata.obsm['tensor_v'],rho)
         sc_object_aggr.layers['velocity']= np.concatenate((adata.obsm['tensor_v_aver'][:,:,0],adata.obsm['tensor_v_aver'][:,:,1]),axis = 1)
         sc_object_aggr.var['highly_variable'] = [genes in sc_object_aggr.uns['gene_subset'] for genes in sc_object_aggr.var_names]
